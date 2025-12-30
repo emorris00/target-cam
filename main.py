@@ -4,7 +4,7 @@ from threading import Lock, Event
 import base64
 import cv2
 import numpy as np
-from picamera2 import PiCamera2
+from picamera2 import Picamera2
 
 thread_event = Event()
 clients = set()
@@ -30,6 +30,7 @@ def index():
 def connect():
     global clients, image
     clients.add(request.sid)
+    print("client connected", request.sid)
     start_background_thread()
     if image:
         retval, buffer = cv2.imencode('.png', image)
@@ -50,12 +51,14 @@ def start_background_thread():
     with thread_lock:
         if thread is None:
             thread_event.set()
-            camera = PiCamera2()
+            print("starting camera")
+            camera = Picamera2()
             config = camera.create_still_configuration(
                 main={"size": (640, 480), "format": "RGB888"}
             )
             camera.configure(config)
             camera.start()
+            print("camera started")
             socketio.sleep(1)
             thread = socketio.start_background_task(background_thread, thread_event)
 
@@ -79,12 +82,14 @@ def background_thread(event):
                 retval, buffer = cv2.imencode('.png', new_image)
                 encoded = base64.b64encode(buffer)
                 socketio.emit('image', {'ext': "png", 'data': encoded})
-            elif diff_image := circle_image_differences(image, new_image):
-                retval, buffer = cv2.imencode('.png', diff_image)
-                encoded = base64.b64encode(buffer)
-                socketio.emit('image', {'ext': "png", 'data': encoded})
+            else:
+                diff_image = circle_image_differences(image, new_image)
+                if diff_image is not None:
+                    retval, buffer = cv2.imencode('.png', diff_image)
+                    encoded = base64.b64encode(buffer)
+                    socketio.emit('image', {'ext': "png", 'data': encoded})
             image = new_image
-    finally: 
+    finally:
         event.clear()
         thread = None
 
@@ -100,7 +105,7 @@ def circle_image_differences(img1, img2, min_area=50):
     """
     Takes two images and returns an image with circles
     drawn around all detected differences.
-    
+
     :param img1: first image
     :param img2: second image
     :param min_area: minimum contour area to count as a difference
@@ -148,7 +153,7 @@ def circle_image_differences(img1, img2, min_area=50):
     if should_output:
         return output
     else:
-        return False
+        return None
 
 if __name__ == '__main__':
-    socketio.run(app)
+    socketio.run(app, host="0.0.0.0")
