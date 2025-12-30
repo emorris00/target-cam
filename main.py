@@ -4,8 +4,7 @@ from threading import Lock, Event
 import base64
 import cv2
 import numpy as np
-from picamera import PiCamera
-from picamera.array import PiRGBArray
+from picamera2 import PiCamera2
 
 thread_event = Event()
 clients = set()
@@ -51,7 +50,12 @@ def start_background_thread():
     with thread_lock:
         if thread is None:
             thread_event.set()
-            camera = PiCamera()
+            camera = PiCamera2()
+            config = camera.create_still_configuration(
+                main={"size": (640, 480), "format": "RGB888"}
+            )
+            camera.configure(config)
+            camera.start()
             socketio.sleep(1)
             thread = socketio.start_background_task(background_thread, thread_event)
 
@@ -84,24 +88,10 @@ def background_thread(event):
         event.clear()
         thread = None
 
-def capture_image_cv2(resolution=(640, 480)):
-    """
-    Captures an image using PiCamera and returns it in the same
-    format as cv2.imread (BGR numpy array).
-    
-    :param resolution: camera resolution (width, height)
-    :return: image as numpy array (BGR)
-    """
-    camera.resolution = resolution
-    raw_capture = PiRGBArray(camera, size=resolution)
+def capture_image_cv2():
+    global camera
 
-    # Capture image
-    camera.capture(raw_capture, format="rgb")
-
-    # Get image as numpy array (RGB)
-    image_rgb = raw_capture.array
-
-    # Convert RGB to BGR (OpenCV format)
+    image_rgb = camera.capture_array()
     image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
 
     return image_bgr
